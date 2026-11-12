@@ -36,7 +36,7 @@ problem_filter=obj({'code':nullable(S),'severity':nullable({'enum':['info','warn
 detail=obj({'around':{'type':['string','array'],'items':S,'minItems':1},'from':{'type':['string','null'],'pattern':r'^(front|plan|side|section_([a-h])\2)(?![\s\S])'},'scale_factor':{'type':'number','exclusiveMinimum':1}},['around'])
 label_text=obj({'prefix':S,'suffix':S,'template':S})
 # Inputs retain the established sparse per-ID map; get_spec describes authored forms once.
-dimension=obj({'text':ref('x'),'style':{'enum':['reference','basic']},'kind':nullable({'enum':['linear','diameter','radius','angle']}),'between':nullable(arr(S,minItems=1,maxItems=2)),'along':nullable({'enum':['x','y','z','true']})},extra=True)
+dimension=obj({'text':ref('x'),'label':nullable(S),'style':{'enum':['reference','basic']},'kind':nullable({'enum':['linear','diameter','radius','angle']}),'between':nullable(arr(S,minItems=1,maxItems=2)),'along':nullable({'enum':['x','y','z','true']})},extra=True)
 spec=obj({'schema':{'enum':['draftwright.spec/1','draftwright.spec/2','draftwright.spec/3']},'binding':nullable({'type':'object'}),'sheets':nullable(obj({'max':nullable(SHEET),'smallest_scale':nullable(S),'keep_together':arr(arr(S)),'hole_table':nullable(SHEET),'gdt_on_sheet_1':B})),'sheet':obj({'size':nullable(S),'preferred_max_sheets':nullable({'type':'integer','minimum':1}),'preferred_max_size':nullable({'enum':['A4','A3','A2','A1','A0']}),'dimension_spacing':nullable({'enum':['normal','compact']}),'scale':nullable(S),'title':{'type':'object','additionalProperties':S},'view_gutter':nullable({'type':'number','minimum':0,'maximum':1189}),'references':nullable(B),'fit_limits':nullable({'type':'boolean'}),'fit_deviations':nullable({'type':'boolean'}),'projection':nullable({'enum':['first','third']}),'default_finish':nullable({'type':'object'})}),'views':{'type':'object','additionalProperties':{'type':'object'}},'dimensions':{'type':'object','additionalProperties':{'type':'object'}},'annotations':{'type':'object','additionalProperties':{'type':'object'}},'features':{'type':'object','additionalProperties':{'type':'object'}},'faces':{'type':'object','additionalProperties':{'type':'object'}},'dimension_source':{'enum':['auto','authored']},'hole_table':{'enum':['auto','always','never']},'notes':arr({'type':'object'}),'tables':arr({'type':'object'}),'gears':arr({'type':'object'}),'feature_declarations':arr(obj({'id':S,'kind':S,'faces':arr(S)},['id','kind','faces']))})
 # Line-work intent is typed in both scopes; other view fields retain their existing schema.
 line_fields = {name: nullable(B) for name in
@@ -296,7 +296,7 @@ def short_names(schema):
 # These private schemas are never advertised in tools/list.
 validation = {}
 full_spec = document()
-Path('schemas/spec.json').write_text(json.dumps(full_spec, indent=2) + '\n')
+Path('schemas/spec.json').write_text(json.dumps(full_spec, indent=2) + '\n', encoding='utf-8', newline='\n')
 total = 0
 for mode in ('validation', 'published'):
     if mode == 'published':
@@ -343,8 +343,8 @@ for mode in ('validation', 'published'):
                     validation[tool] = schema
             else:
                 total += compact_size(schema)
-                Path(f'schemas/mcp/{tool}.{kind}.json').write_text(json.dumps(schema,indent=2)+'\n')
-Path('schemas/mcp-validation.json').write_text(json.dumps(validation, indent=2) + '\n')
+                Path(f'schemas/mcp/{tool}.{kind}.json').write_text(json.dumps(schema,indent=2)+'\n', encoding='utf-8', newline='\n')
+Path('schemas/mcp-validation.json').write_text(json.dumps(validation, indent=2) + '\n', encoding='utf-8', newline='\n')
 # Context ceiling, shared with tests/engine_version.rs. Nested Spec growth is free;
 # detail placement view names (detail_a…) add 88 bytes to item_options.
 # View-gap descriptions are in the on-demand Spec only and add zero tools/list bytes.

@@ -35,7 +35,7 @@ pub(super) fn apply(
                 );
             }
         }
-        if entry.text.is_none() && entry.style.is_none() {
+        if entry.text.is_none() && entry.style.is_none() && entry.label.is_none() {
             continue;
         }
         let old = w.terms.join(" ");
@@ -60,6 +60,11 @@ pub(super) fn apply(
             from_spec.push("text".into());
             w.basis += "; label wording from_spec: text; generated measured terms retained";
         }
+        if let Some(label) = &entry.label {
+            w.terms = vec![label.clone()];
+            from_spec.push("label".into());
+            w.basis += "; label wording from_spec: label override";
+        }
         if entry.style == Some(Style::Reference) || (reference && entry.style.is_none()) {
             w.terms = vec![format!("({})", w.terms.join(" "))];
         }
@@ -82,7 +87,7 @@ pub(super) fn check_covered(spec: &Spec, kept: &[Kept], omitted: &[Omitted]) -> 
     let mut problems = Vec::new();
     for (id, entry) in &spec.dimensions {
         if !entry.omit
-            && (entry.text.is_some() || entry.style.is_some())
+            && (entry.text.is_some() || entry.style.is_some() || entry.label.is_some())
             && !kept.iter().any(|(w, ..)| &w.id == id)
             && let Some(o) = omitted.iter().find(|o| &o.id == id)
         {

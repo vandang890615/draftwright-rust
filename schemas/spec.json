@@ -837,6 +837,16 @@
             }
           ]
         },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "omit": {
           "type": "boolean"
         }

@@ -93,7 +93,7 @@ def document():
         'dimension': obj({**optional({'presentation': {**enum('tangent_depth', 'far_extreme'), 'description': 'Cylindrical-mouth pocket depth: tangent_depth measures from the near tangent; far_extreme states the floor distance from the opposite cylinder tangent. Both are measured from the cylinder axis, radius and pocket floor. Measured values are retained; unsupported requests warn.'}, 'text': ref('text'), 'style': enum('reference', 'basic'),
                         'kind': enum('linear', 'diameter', 'radius', 'angle'),
                         'between': arr(S, minItems=1, maxItems=2), 'along': enum('x', 'y', 'z', 'true'),
-                        'tolerance': S, 'fit': S, 'view': S, 'place': ref('place')}), 'omit': B}),
+                        'tolerance': S, 'fit': S, 'view': S, 'place': ref('place'), 'label': S}), 'omit': B}),
         'annotation': obj({**optional({'text': ref('text'), 'place': ref('place')}), 'omit': B}),
         'feature': obj({**optional({'anchor': ref('anchor'), 'reclassify': enum('hole', 'boss', 'turned_step', 'slot', 'pocket'),
                        'gusset_view': {**enum('front', 'side', 'plan'), 'description': 'Transverse view for a readable gusset group; must look along either leg. Legs remain in the triangle view.'}, 'pattern': ref('pattern'), 'fit': S, 'datum': S, 'finish': ref('finish'),

@@ -533,6 +533,9 @@ pub struct DimensionSpec {
     /// Position relative to its feature and carrying view; never page coordinates.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub place: Option<crate::placement_intent::Place>,
+    /// Authored label text override (replaces the displayed text of the dimension).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
 }
 
 pub use crate::springs::Depiction as SpringDepiction;
