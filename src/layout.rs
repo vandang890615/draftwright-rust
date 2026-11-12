@@ -166,10 +166,10 @@ pub fn title_block_width(page_w: f64) -> f64 {
     }
 }
 
-fn sheet(name: &str) -> [f64; 2] {
+fn sheet(name: &str, is_portrait: bool) -> [f64; 2] {
     // Invariant: LADDER names only entries in the fixed PAGES array.
     let (_, w, h) = PAGES.iter().find(|p| p.0 == name).expect("a ladder sheet");
-    [*w, *h]
+    if is_portrait { [*h, *w] } else { [*w, *h] }
 }
 
 /// `[x0, y0, x1, y1]`, page mm.
@@ -717,6 +717,8 @@ pub struct Request {
     pub units: crate::units::Units,
     /// Largest paper index for automatic page/scale choice.
     pub max_page: Option<usize>,
+    /// Sheet orientation preference (Landscape, Portrait, Auto).
+    pub orientation: crate::model::Orientation,
     /// Internal automatic page/scale trials may compare arrangements.
     pub automatic_pair: bool,
     pub candidate_arrangement: Option<Arrangement>,
@@ -757,6 +759,7 @@ impl Request {
             paper: Default::default(),
             units: Default::default(),
             max_page: None,
+            orientation: crate::model::Orientation::Landscape,
             automatic_pair: false,
             candidate_arrangement: None,
             size,
@@ -1633,16 +1636,80 @@ pub fn choose(
         let fallback = (!fit(s, p, preferred, true)).then_some(Fallback::Uncertain);
         return pick(s, p, preferred, fallback);
     }
+    if req.orientation == crate::model::Orientation::Auto {
+        let mut req_landscape = req.clone();
+        req_landscape.orientation = crate::model::Orientation::Landscape;
+        let mut req_portrait = req.clone();
+        req_portrait.orientation = crate::model::Orientation::Portrait;
+
+        let land_pick = choose(
+            &req_landscape,
+            scaled,
+            scale,
+            page.map(|p| [p[0].max(p[1]), p[0].min(p[1])]),
+            arrangements,
+            tb_width,
+        );
+        let port_pick = choose(
+            &req_portrait,
+            scaled,
+            scale,
+            page.map(|p| [p[0].min(p[1]), p[0].max(p[1])]),
+            arrangements,
+            tb_width,
+        );
+
+        let choose_portrait = match (port_pick.fallback.is_none(), land_pick.fallback.is_none()) {
+            (true, false) => true,
+            (false, true) => false,
+            _ => {
+                if port_pick.scale > land_pick.scale + 1e-9 {
+                    true
+                } else if land_pick.scale > port_pick.scale + 1e-9 {
+                    false
+                } else {
+                    let port_area = port_pick.page[0] * port_pick.page[1];
+                    let land_area = land_pick.page[0] * land_pick.page[1];
+                    if port_area < land_area - 1.0 {
+                        true
+                    } else if land_area < port_area - 1.0 {
+                        false
+                    } else {
+                        // Equal goes to landscape.
+                        false
+                    }
+                }
+            }
+        };
+
+        return if choose_portrait {
+            port_pick
+        } else {
+            land_pick
+        };
+    }
+    let is_portrait = req.orientation == crate::model::Orientation::Portrait;
+    let page_dim = |w: f64, h: f64| if is_portrait { [h, w] } else { [w, h] };
     let (mut candidates, packed): (Vec<(f64, [f64; 2])>, bool) = match (scale, page) {
         (None, Some(p)) => (scales.iter().map(|s| (*s, p)).collect(), true),
-        (Some(s), None) => (pages.iter().map(|(_, w, h)| (s, [*w, *h])).collect(), true),
-        _ if req.paper == crate::units::Paper::Iso && req.units == crate::units::Units::Mm => {
-            (LADDER.iter().map(|(s, n)| (*s, sheet(n))).collect(), false)
-        }
+        (Some(s), None) => (
+            pages
+                .iter()
+                .map(|(_, w, h)| (s, page_dim(*w, *h)))
+                .collect(),
+            true,
+        ),
+        _ if req.paper == crate::units::Paper::Iso && req.units == crate::units::Units::Mm => (
+            LADDER
+                .iter()
+                .map(|(s, n)| (*s, sheet(n, is_portrait)))
+                .collect(),
+            false,
+        ),
         _ => (
             pages
                 .iter()
-                .flat_map(|(_, w, h)| scales.iter().map(move |s| (*s, [*w, *h])))
+                .flat_map(|(_, w, h)| scales.iter().map(move |s| (*s, page_dim(*w, *h))))
                 .collect(),
             false,
         ),
@@ -1650,7 +1717,8 @@ pub fn choose(
     if page.is_none()
         && let Some(max) = req.max_page
     {
-        candidates.retain(|(_, p)| p[0] <= pages[max].1 && p[1] <= pages[max].2);
+        let [max_w, max_h] = page_dim(pages[max].1, pages[max].2);
+        candidates.retain(|(_, p)| p[0] <= max_w && p[1] <= max_h);
         if scale.is_none() && max < pages.len() - 1 {
             // The old ladder's reduction tail belongs to A0. With a smaller
             // maximum it belongs to that paper instead; removing it would jump
@@ -1661,7 +1729,7 @@ pub fn choose(
                     .iter()
                     .copied()
                     .filter(|s| *s < last_scale && *s >= 0.0002)
-                    .map(|s| (s, [pages[max].1, pages[max].2])),
+                    .map(|s| (s, page_dim(pages[max].1, pages[max].2))),
             );
         }
     }
@@ -1799,7 +1867,7 @@ pub fn recover(
     };
     let sheets = PAGES
         .iter()
-        .position(|(_, w, h)| [*w, *h] == page)
+        .position(|(_, w, h)| [*w, *h] == page || [*h, *w] == page)
         .filter(|_| !page_pinned)
         .map_or(&[][..], |i| &PAGES[i + 1..]);
     let retries = scales

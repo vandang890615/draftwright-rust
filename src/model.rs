@@ -700,6 +700,11 @@ pub struct SheetSpec {
     /// `n:m`, from ISO 5455's series.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scale: Option<String>,
+    /// Sheet orientation: `landscape` (default), `portrait`, or `auto` (tries both
+    /// orientations and selects whichever fits better at a larger scale or on a smaller
+    /// sheet, with landscape as tie-breaker).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub orientation: Option<Orientation>,
     /// Dimension-line spacing: unset uses normal 10/7 mm lanes and falls back to compact
     /// 7/5.5 mm on the same sheet before a smaller scale or larger paper; `normal` forbids
     /// that fallback and `compact` uses compact lanes directly.
@@ -731,6 +736,20 @@ pub struct SheetSpec {
     /// symbol beside the title block, as an AP242 one on the part is drawn ([`crate::spec_notes`]).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_finish: Option<crate::spec_notes::FinishSpec>,
+}
+
+/// Sheet orientation (`SheetSpec::orientation`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Orientation {
+    /// Width >= Height (standard landscape).
+    #[default]
+    Landscape,
+    /// Height > Width (swapped dimensions for slender vertical parts).
+    Portrait,
+    /// Automatically try both orientations in page/scale search and keep whichever
+    /// fits better at a larger scale or on a smaller sheet (tie goes to landscape).
+    Auto,
 }
 
 /// Sheet-wide dimension-line spacing ([`SheetSpec::dimension_spacing`]).
@@ -2914,7 +2933,14 @@ pub(crate) const LARGE_SHEET: usize = 2;
 /// above the front) no taller. Such a part exhausts single- and multi-sheet A4/A3 plans
 /// before the automatic search admits A2 or larger.
 pub(crate) fn fits_a3_at_full_size(analysis: &Analysis, first: &Plan) -> bool {
-    let (_, w, h) = first.spec.pages()[LARGE_SHEET - 1];
+    let (_, raw_w, raw_h) = first.spec.pages()[LARGE_SHEET - 1];
+    let (w, h) = if first.sheet.page[0] < first.sheet.page[1]
+        || first.spec.sheet.orientation == Some(Orientation::Portrait)
+    {
+        (raw_h, raw_w)
+    } else {
+        (raw_w, raw_h)
+    };
     let size = |v: &PlannedView| {
         // Invariant: Planned cameras come from the fixed views or checked section/detail cameras, with nonparallel axes.
         let view = View::new(v.direction, v.up).expect("planned view");
@@ -3905,7 +3931,13 @@ fn recover_candidates(
                 }
                 // A view larger than the usable paper cannot be repaired by annotation placement.
                 // Reject it before running the finished solver (especially important on dense PMI).
-                let (_, w, h) = spec.pages()[i];
+                let (_, raw_w, raw_h) = spec.pages()[i];
+                let is_portrait = spec.sheet.orientation == Some(Orientation::Portrait);
+                let (w, h) = if is_portrait {
+                    (raw_h, raw_w)
+                } else {
+                    (raw_w, raw_h)
+                };
                 if first
                     .views
                     .iter()
@@ -3917,8 +3949,12 @@ fn recover_candidates(
                         if let Some(b) = &v.broken {
                             size[b.axis] -= b.reduction();
                         }
-                        size[0] * scale > w - 2.0 * layout::margin()
-                            || size[1] * scale > h - 2.0 * layout::margin()
+                        let fits_current = size[0] * scale <= w - 2.0 * layout::margin()
+                            && size[1] * scale <= h - 2.0 * layout::margin();
+                        let fits_other = spec.sheet.orientation == Some(Orientation::Auto)
+                            && (size[0] * scale <= h - 2.0 * layout::margin()
+                                && size[1] * scale <= w - 2.0 * layout::margin());
+                        !(fits_current || fits_other)
                     })
                 {
                     tried.push(format!(
@@ -6629,7 +6665,13 @@ fn plan_with_presentation(
             spec.pages()
                 .iter()
                 .find(|(n, ..)| n == s)
-                .map(|(_, w, h)| [*w, *h])
+                .map(|(_, w, h)| {
+                    if spec.sheet.orientation == Some(Orientation::Portrait) {
+                        [*h, *w]
+                    } else {
+                        [*w, *h]
+                    }
+                })
                 .ok_or_else(|| {
                     invalid(
                         format!("{s:?} is not a sheet size."),
@@ -6757,6 +6799,7 @@ fn plan_with_presentation(
     );
     request.paper = spec.paper();
     request.units = spec.units;
+    request.orientation = spec.sheet.orientation.unwrap_or_default();
     let breaks = crate::broken::resolve(analysis, spec, &mut problems);
     request.breaks = breaks
         .iter()
@@ -6940,7 +6983,7 @@ fn plan_with_presentation(
     let page_name = |page: [f64; 2]| {
         spec.pages()
             .iter()
-            .find(|(_, w, h)| [*w, *h] == page)
+            .find(|(_, w, h)| [*w, *h] == page || [*h, *w] == page)
             .map_or_else(|| format!("{}x{}", page[0], page[1]), |p| p.0.into())
     };
     let size = page_name(pick.page);

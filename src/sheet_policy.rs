@@ -166,6 +166,7 @@ struct Estimate {
     first_blocks: usize,
     scale: f64,
     aligned: bool,
+    is_portrait: bool,
 }
 
 impl Estimate {
@@ -231,6 +232,8 @@ impl Estimate {
             blocks,
             scale: baseline.sheet.scale_factor,
             aligned: baseline.spec.views.values().all(|v| v.place.is_none()),
+            is_portrait: baseline.sheet.page[0] < baseline.sheet.page[1]
+                || baseline.spec.sheet.orientation == Some(crate::model::Orientation::Portrait),
         }
     }
 
@@ -256,11 +259,16 @@ impl Estimate {
     /// with the reserved paper mm it needs against what the paper offers; `None` if all hold.
     fn shortfall(&self, size: &str, max: usize, scale: f64) -> Option<String> {
         // Invariant: Candidates select paper names from the fixed PAGES table.
-        let (_, w, h) = crate::units::Paper::for_size(size)
+        let (_, raw_w, raw_h) = crate::units::Paper::for_size(size)
             .pages()
             .iter()
             .find(|p| p.0 == size)
             .unwrap();
+        let (w, h) = if self.is_portrait {
+            (*raw_h, *raw_w)
+        } else {
+            (*raw_w, *raw_h)
+        };
         let available = [w - 2.0 * layout::margin(), h - 2.0 * layout::margin()];
         let at = model::scale_name(scale);
         let frame = format!(
@@ -361,7 +369,7 @@ impl Estimate {
             area += block[0] * block[1];
         }
         let drawing_area = available[0] * available[1]
-            - layout::title_block_width(*w) * crate::title_block::top([0.0; 4]);
+            - layout::title_block_width(w) * crate::title_block::top([0.0; 4]);
         if principal_area + first_area > drawing_area {
             return Some(format!(
                 "the principal views and sheet-1 tables need at least {:.0} mm² at {at}; one {size} sheet offers {drawing_area:.0} mm² beside the title block",
@@ -3365,6 +3373,7 @@ mod tests {
             first_blocks: 0,
             scale: 1.0,
             aligned: true,
+            is_portrait: false,
         };
         // An outline-only test would accept A4 at 1:10. A fixed-width
         // annotation reservation exceeds it even with additional sheets.
@@ -3392,6 +3401,7 @@ mod tests {
             first_blocks: 1,
             scale: 1.0,
             aligned: true,
+            is_portrait: false,
         };
         assert!(!estimate(vec![vec![whole]]).fits("A2", 1, 1.0));
         assert!(estimate(vec![vec![whole, split]]).fits("A2", 1, 1.0));
@@ -3416,6 +3426,7 @@ mod tests {
             first_blocks: 1,
             scale: 1.0,
             aligned: true,
+            is_portrait: false,
         };
         // Total area and every individual side fit A3. The tall schedule
         // forces both aligned projections beside it; their widths do not.
@@ -3446,6 +3457,7 @@ mod tests {
             first_blocks: 0,
             scale: 1.0,
             aligned: true,
+            is_portrait: false,
         };
         assert!(
             estimate
@@ -3509,6 +3521,7 @@ mod tests {
             first_blocks: 0,
             scale: 1.0,
             aligned: true,
+            is_portrait: false,
         };
         // Even at the smallest readable scale the fixed band exceeds A4's 271 mm (277 mm inside
         // the frame, less the 3 mm frame gutter on each side).
@@ -3551,6 +3564,7 @@ mod tests {
             first_blocks: 0,
             scale: 1.0,
             aligned: true,
+            is_portrait: false,
         };
         // A4's drawable width inside the 3 mm frame gutter.
         assert_eq!(at_limit(271.0).scale("A4", 1, 1.0), Some(1.0));

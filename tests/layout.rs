@@ -106,6 +106,7 @@ fn request(c: &Value) -> Request {
         units: Default::default(),
         paper: Default::default(),
         max_page: None,
+        orientation: draftwright::model::Orientation::Landscape,
         automatic_pair: false,
         candidate_arrangement: None,
         aligned: Vec::new(),
@@ -518,4 +519,81 @@ fn capped_automatic_ladder_keeps_its_standard_reduction_tail() {
     assert_eq!(pick.page, [420.0, 297.0]);
     assert!(pick.scale >= 0.02, "{}", pick.scale);
     assert!(pick.fallback.is_none());
+}
+
+#[test]
+fn portrait_orientation_swaps_dimensions_and_fits_tall_part() {
+    let spec: draftwright::model::Spec = serde_json::from_value(serde_json::json!({
+        "sheet": {
+            "size": "A4",
+            "orientation": "portrait"
+        }
+    }))
+    .unwrap();
+    assert_eq!(
+        spec.sheet.orientation,
+        Some(draftwright::model::Orientation::Portrait)
+    );
+
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let (_part, a) =
+        draftwright::model::analyse(&root.join("tests/fixtures/parts/plate.step")).unwrap();
+    let plan = draftwright::model::plan(&a, &spec).unwrap();
+
+    assert_eq!(plan.sheet.page, [210.0, 297.0]);
+    assert_eq!(plan.sheet.size, "A4");
+
+    let width = draftwright::layout::title_block_width(plan.sheet.page[0]);
+    assert_eq!(width, 120.0);
+    assert!(plan.sheet.title_block[2] <= 210.0);
+    assert!(plan.sheet.title_block[0] >= 0.0);
+
+    let zones = draftwright::sheets::zones(plan.sheet.page);
+    assert_eq!(zones.columns, 4);
+    assert_eq!(zones.rows, 6);
+}
+
+#[test]
+fn tall_part_automatically_selects_portrait_for_better_scale_or_smaller_sheet() {
+    let make_req = |orientation| {
+        let mut r = Request::new([25.0, 25.0, 220.0], Principals::ALL, true);
+        r.orientation = orientation;
+        r
+    };
+    let none = |_: f64| Scaled::default();
+    let auto = layout::AUTOMATIC_ARRANGEMENTS;
+
+    let p_land = layout::choose(
+        &make_req(draftwright::model::Orientation::Landscape),
+        &none,
+        None,
+        None,
+        &auto,
+        None,
+    );
+    let p_auto = layout::choose(
+        &make_req(draftwright::model::Orientation::Auto),
+        &none,
+        None,
+        None,
+        &auto,
+        None,
+    );
+
+    // Auto orientation tries both orientations and selects portrait because it
+    // fits at a larger scale or on a smaller sheet than landscape.
+    assert!(
+        p_auto.page[0] < p_auto.page[1],
+        "Auto orientation must pick portrait (page {:?})",
+        p_auto.page
+    );
+    let auto_area = p_auto.page[0] * p_auto.page[1];
+    let land_area = p_land.page[0] * p_land.page[1];
+    assert!(
+        p_auto.scale > p_land.scale || auto_area < land_area,
+        "Auto orientation must achieve a larger scale ({}) than landscape ({}) or fit on a smaller sheet ({auto_area} < {land_area})",
+        p_auto.scale,
+        p_land.scale,
+    );
+    assert!(p_auto.fallback.is_none());
 }

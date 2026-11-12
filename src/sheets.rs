@@ -46,16 +46,17 @@ pub struct CrossRef {
 }
 
 pub fn zones(page: [f64; 2]) -> Zones {
+    let orient = |(c, r): (u32, u32)| if page[0] < page[1] { (r, c) } else { (c, r) };
     let (columns, rows) = layout::PAGES
         .iter()
-        .position(|(_, w, h)| [*w, *h] == page)
-        .map(|i| [(6, 4), (8, 6), (12, 8), (16, 12), (24, 16)][i])
+        .position(|(_, w, h)| [*w, *h] == page || [*h, *w] == page)
+        .map(|i| orient([(6, 4), (8, 6), (12, 8), (16, 12), (24, 16)][i]))
         .or_else(|| {
             layout::ANSI_PAGES
                 .iter()
                 .chain(&layout::ARCH_PAGES)
-                .position(|(_, w, h)| [*w, *h] == page)
-                .map(|i| [(2, 2), (4, 2), (4, 4), (8, 4), (8, 8)][i % 5])
+                .position(|(_, w, h)| [*w, *h] == page || [*h, *w] == page)
+                .map(|i| orient([(2, 2), (4, 2), (4, 4), (8, 4), (8, 8)][i % 5]))
         })
         .unwrap_or_else(|| {
             (
@@ -1672,7 +1673,12 @@ pub(crate) fn replay_views(analysis: &Analysis, source: &Plan, frame: &Plan) -> 
 /// Repack only when existing ruled furniture is taller than the requested page. The
 /// settled dimensions, datum symbols, tags and required rows all survive as owned ink.
 pub(crate) fn reflow_tall_tables(analysis: &Analysis, source: &Plan, size: &str) -> Option<Plan> {
-    let (_, _, height) = source.spec.pages().iter().find(|p| p.0 == size)?;
+    let (_, raw_w, raw_h) = source.spec.pages().iter().find(|p| p.0 == size)?;
+    let height = if source.sheet.page[0] < source.sheet.page[1] {
+        *raw_w
+    } else {
+        *raw_h
+    };
     let drawable = height - 2.0 * layout::margin();
     let tall = source
         .hole_tables
@@ -1914,12 +1920,17 @@ fn separate_views_inner(
         adjusted.captions.retain(|c| c.view != "v:iso");
     }
     let source = &adjusted;
-    let (_, w, h) = source.spec.pages().iter().find(|p| p.0 == size)?;
+    let (_, raw_w, raw_h) = source.spec.pages().iter().find(|p| p.0 == size)?;
+    let (w, h) = if source.sheet.page[0] < source.sheet.page[1] {
+        (*raw_h, *raw_w)
+    } else {
+        (*raw_w, *raw_h)
+    };
     let mut plan = source.clone();
     let page_delta = [w - source.sheet.page[0], h - source.sheet.page[1]];
     plan.sheet.size = size.into();
-    plan.sheet.page = [*w, *h];
-    let width = layout::title_block_width(*w);
+    plan.sheet.page = [w, h];
+    let width = layout::title_block_width(w);
     plan.sheet.title_block[0] = w - layout::TB_CLEAR - width;
     plan.sheet.title_block[2] = w - layout::TB_CLEAR;
     let title_delta = [

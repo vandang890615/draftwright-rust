@@ -1224,6 +1224,21 @@
             }
           ]
         },
+        "orientation": {
+          "anyOf": [
+            {
+              "enum": [
+                "landscape",
+                "portrait",
+                "auto"
+              ],
+              "description": "Sheet orientation: landscape (default), portrait, or auto (tries both orientations and selects whichever fits better at a larger scale or on a smaller sheet, with landscape as tie-breaker)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "preferred_max_sheets": {
           "anyOf": [
             {
